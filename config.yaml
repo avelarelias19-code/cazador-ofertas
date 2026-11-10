@@ -1,0 +1,96 @@
+# IMPORTANTE: los CPs van ENTRE COMILLAS
+postal_codes:
+  - "06600"   # CDMX Centro (Juárez / Cuauhtémoc)
+  - "09000"   # CDMX Oriente (Iztapalapa Centro)
+  - "04500"   # CDMX Sur (Pedregal / Coyoacán)
+  - "72000"   # Puebla, Pue. (Centro)
+  - "76000"   # Santiago de Querétaro, Qro. (Centro)
+
+rules:
+  min_discount_pct: 49.99              # alerta desde 50% de descuento en productos < $10,000 MXN
+  high_ticket_min_price: 10000         # en productos de rango >= $10,000 MXN...
+  high_ticket_min_discount_pct: 30     # ...alerta desde 30% de descuento
+  price_error_ratio: 0.35              # error de precio si precio <= 35% de la mediana histórica
+  min_history_samples: 3
+  symbolic_price_max: 10               # "precio simbólico": <= $10 ...
+  symbolic_list_min: 500               # ... con precio de lista >= $500
+
+monitor:
+  day_interval_minutes: 10             # de 06:00 a 23:00 hrs (6 AM a 11 PM) revisa cada 10 minutos
+  night_interval_minutes: 20           # de 23:00 a 06:00 hrs (11 PM a 6 AM) revisa cada 20 minutos
+  day_start_hour: 6
+  day_end_hour: 23
+  min_delay_seconds: 4                 # pausa entre productos de la misma tienda
+  block_backoff_minutes: 60            # pausa si una tienda muestra CAPTCHA/bloqueo
+  db_path: ofertas.db
+  headless: true
+
+# Modo Cazador Automático en las 10 tiendas:
+# Elektra, Chedraui, Walmart, Amazon, Mercado Libre, Office Depot, La Comer, Bodegas Alianza, Suburbia y Coppel
+queries:
+  - store: elektra
+    query: pantallas
+    max_results: 20
+  - store: elektra
+    query: laptops
+    max_results: 20
+  - store: elektra
+    query: celulares
+    max_results: 20
+  - store: chedraui
+    query: pantallas
+    max_results: 20
+  - store: chedraui
+    query: consolas
+    max_results: 20
+  - store: chedraui
+    query: refrigeradores
+    max_results: 20
+  - store: suburbia
+    query: pantallas
+    max_results: 20
+  - store: suburbia
+    query: celulares
+    max_results: 20
+  - store: coppel
+    query: pantallas
+    max_results: 20
+  - store: coppel
+    query: consolas
+    max_results: 20
+  - store: coppel
+    query: celulares
+    max_results: 20
+  - store: bodegas_alianza
+    query: whisky
+    max_results: 20
+  - store: bodegas_alianza
+    query: tequila
+    max_results: 20
+  - store: office_depot
+    query: laptops
+    max_results: 20
+  - store: office_depot
+    query: monitores
+    max_results: 20
+  - store: la_comer
+    query: pantallas
+    max_results: 20
+  - store: walmart
+    query: pantallas
+    max_results: 20
+  - store: walmart
+    query: laptops
+    max_results: 20
+  - store: amazon
+    query: pantallas 4k
+    max_results: 15
+  - store: mercadolibre
+    query: pantallas smart tv
+    max_results: 20
+  - store: mercadolibre
+    query: laptops gamer
+    max_results: 20
+
+# Opcional: URLs directas de productos específicos adicionales que quieras vigilar fijo
+targets: []
