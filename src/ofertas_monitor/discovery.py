@@ -1,8 +1,8 @@
-"""Descubridor automático de ofertas por búsqueda/categoría en las 5 tiendas.
+"""Descubridor automático de ofertas por búsqueda/categoría en todas las tiendas.
 
-Pre-filtra productos que ya muestran un descuento candidato (>65%, o >=30% en el
-rango de >=$10,000 MXN, o precio simbólico) y devuelve la URL directa de cada
-ficha de producto para que el Monitor verifique vendedor oficial y stock en los 5 CPs.
+Pre-filtra productos que ya muestran un descuento candidato (según `rules` de
+config.yaml: descuento general, gama alta >= $10,000 o precio simbólico) y devuelve
+la URL directa de cada ficha para que el Monitor verifique vendedor oficial y stock en los 5 CPs.
 """
 from __future__ import annotations
 

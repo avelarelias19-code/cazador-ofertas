@@ -74,7 +74,9 @@ def _extract_list_price(offer: dict[str, Any]) -> Decimal | None:
                 parsed = parse_price(spec.get("price"))
                 if parsed is not None:
                     return parsed
-    return parse_price(offer.get("highPrice"))
+    # Nota: NO se usa `highPrice` de un AggregateOffer como precio de lista: es el precio
+    # más alto entre vendedores (incluye marketplace) y generaba descuentos falsos.
+    return None
 
 
 async def extract_jsonld_product(page: Page) -> JsonLdProduct | None:

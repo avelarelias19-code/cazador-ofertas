@@ -12,6 +12,7 @@ from typing import Mapping
 import yaml
 
 from ofertas_monitor.detection import DealRules
+from ofertas_monitor.flights import FlightSettings, parse_flight_portals, parse_flight_routes
 from ofertas_monitor.models import Store
 
 # Zona horaria de Ciudad de México (UTC-6 estándar)
@@ -52,13 +53,69 @@ class Settings:
     day_end_hour: int = 23
     min_delay_seconds: float = 4.0
     block_backoff_minutes: int = 60
+    block_notice_cooldown_hours: int = 24
+    queries_per_run: int = 0  # 0 = todas las búsquedas en cada corrida
     db_path: str = "ofertas.db"
     headless: bool = True
     targets: list[Target] = field(default_factory=list)
     queries: list[SearchQuery] = field(default_factory=list)
+    flights: FlightSettings = field(default_factory=FlightSettings)
     telegram_token: str | None = None
     telegram_chat_id: str | None = None
     ml_access_token: str | None = None
+
+
+def select_query_batch(
+    queries: list[SearchQuery], batch_size: int, batch_index: int
+) -> tuple[list[SearchQuery], int]:
+    """Devuelve el lote de búsquedas de esta corrida y el índice del siguiente lote.
+
+    Rota por lotes para que cada corrida sea corta (cabe en GitHub Actions) y en unas
+    cuantas corridas se cubran todas las búsquedas.
+    """
+    if batch_size <= 0 or batch_size >= len(queries):
+        return list(queries), 0
+    n_batches = -(-len(queries) // batch_size)
+    idx = batch_index % n_batches
+    start = idx * batch_size
+    return list(queries[start : start + batch_size]), (idx + 1) % n_batches
+
+
+def _parse_flights(raw: object, environ: Mapping[str, str]) -> FlightSettings:
+    token = environ.get("TRAVELPAYOUTS_TOKEN") or None
+    if raw is None:
+        return FlightSettings(token=token)
+    if not isinstance(raw, dict):
+        raise ConfigError("La sección 'flights' debe ser un mapeo.")
+    d = FlightSettings()
+
+    def _opt_dec(key: str, default: Decimal | None) -> Decimal | None:
+        if key not in raw:
+            return default
+        val = raw.get(key)
+        return Decimal(str(val)) if val not in (None, "", 0) else None
+
+    min_drop = float(raw.get("min_drop_pct", d.min_drop_pct))
+    err_drop = float(raw.get("error_fare_drop_pct", d.error_fare_drop_pct))
+    if not (0 < min_drop < 100) or not (0 < err_drop < 100):
+        raise ConfigError("flights.min_drop_pct y error_fare_drop_pct deben estar entre 0 y 100.")
+    return FlightSettings(
+        enabled=bool(raw.get("enabled", True)),
+        token=token,
+        currency=str(raw.get("currency", d.currency)).lower(),
+        market=str(raw.get("market", d.market)).lower(),
+        months_ahead=int(raw.get("months_ahead", d.months_ahead)),
+        min_drop_pct=min_drop,
+        error_fare_drop_pct=err_drop,
+        min_history_samples=int(raw.get("min_history_samples", d.min_history_samples)),
+        min_batch_samples=int(raw.get("min_batch_samples", d.min_batch_samples)),
+        national_max_price_oneway=_opt_dec("national_max_price_oneway", d.national_max_price_oneway),
+        national_max_price_roundtrip=_opt_dec("national_max_price_roundtrip", d.national_max_price_roundtrip),
+        every_minutes=int(raw.get("every_minutes", d.every_minutes)),
+        request_delay_seconds=float(raw.get("request_delay_seconds", d.request_delay_seconds)),
+        routes=parse_flight_routes(raw.get("routes")),
+        portals=parse_flight_portals(raw.get("portals")),
+    )
 
 
 def current_interval_minutes(settings: Settings, now: datetime | None = None) -> int:
@@ -216,10 +273,13 @@ def load_settings(
         day_end_hour=int(mon.get("day_end_hour", 23)),
         min_delay_seconds=float(mon.get("min_delay_seconds", 4.0)),
         block_backoff_minutes=int(mon.get("block_backoff_minutes", 60)),
+        block_notice_cooldown_hours=int(mon.get("block_notice_cooldown_hours", 24)),
+        queries_per_run=int(mon.get("queries_per_run", 0)),
         db_path=str(mon.get("db_path", "ofertas.db")),
         headless=bool(mon.get("headless", True)),
         targets=targets,
         queries=queries,
+        flights=_parse_flights(data.get("flights"), environ),
         telegram_token=environ.get("TELEGRAM_BOT_TOKEN") or None,
         telegram_chat_id=environ.get("TELEGRAM_CHAT_ID") or None,
         ml_access_token=environ.get("ML_ACCESS_TOKEN") or None,

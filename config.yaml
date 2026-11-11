@@ -20,77 +20,140 @@ monitor:
   night_interval_minutes: 20           # de 23:00 a 06:00 hrs (11 PM a 6 AM) revisa cada 20 minutos
   day_start_hour: 6
   day_end_hour: 23
+  queries_per_run: 20                  # búsquedas por corrida (rotan): con ~70 búsquedas se cubren todas cada ~40 min
   min_delay_seconds: 4                 # pausa entre productos de la misma tienda
   block_backoff_minutes: 60            # pausa si una tienda muestra CAPTCHA/bloqueo
+  block_notice_cooldown_hours: 24      # máximo 1 aviso de bloqueo por tienda cada 24 h
   db_path: ofertas.db
   headless: true
 
-# Modo Cazador Automático en las 10 tiendas:
-# Elektra, Chedraui, Walmart, Amazon, Mercado Libre, Office Depot, La Comer, Bodegas Alianza, Suburbia y Coppel
+# ---------------------------------------------------------------------------
+# VUELOS (Multi-portal Web en México + Travelpayouts opcional).
+# Revisa directamente: Viajes Suburbia, Viajes Liverpool, Despegar, BestDay,
+# PriceTravel, Volaris, Viva Aerobus y Aeroméxico (NO requiere token para portales web).
+# Códigos: MEX = CDMX, PBC = Puebla, QRO = Querétaro. destination: cualquiera = a donde sea.
+# trip: redondo | sencillo | ambos
+# ---------------------------------------------------------------------------
+flights:
+  enabled: true
+  months_ahead: 3                      # busca salidas este mes y los 2 siguientes
+  min_drop_pct: 50                     # alerta si está 50% abajo del precio normal de la ruta
+  error_fare_drop_pct: 70              # "POSIBLE ERROR DE TARIFA" si está 70% abajo
+  national_max_price_oneway: 700       # cualquier vuelo nacional sencillo <= $700 MXN
+  national_max_price_roundtrip: 1400   # cualquier vuelo nacional redondo <= $1,400 MXN
+  every_minutes: 60                    # revisa vuelos cada 60 minutos
+  portals:
+    - viajes_suburbia                  # https://viajes.suburbia.com.mx/vuelos/
+    - viajes_liverpool                 # https://viajes.liverpool.com.mx/vuelos
+    - despegar                         # https://www.despegar.com.mx/vuelos/
+    - bestday                          # https://www.bestday.com.mx/vuelos/
+    - pricetravel                      # https://www.pricetravel.com.mx/vuelos
+    - volaris                          # https://www.volaris.com/es/ofertas-de-vuelos
+    - vivaaerobus                      # https://www.vivaaerobus.com/es-mx/promociones/ofertas-de-vuelos
+    - aeromexico                       # https://www.aeromexico.com/es-mx/promociones/vuelos
+  routes:
+    - { origin: MEX, destination: cualquiera, trip: ambos }
+    - { origin: PBC, destination: cualquiera, trip: redondo }
+    - { origin: QRO, destination: cualquiera, trip: redondo }
+    - { origin: MEX, destination: CUN, trip: redondo }
+    - { origin: MEX, destination: SJD, trip: redondo }
+    - { origin: MEX, destination: MAD, trip: redondo }
+    - { origin: MEX, destination: NYC, trip: redondo }
+    - { origin: MEX, destination: LAX, trip: redondo }
+    - { origin: MEX, destination: TYO, trip: redondo }
+    # Ejemplo con tope propio: avisa siempre que MEX-BCN redondo baje de $9,000
+    - { origin: MEX, destination: BCN, trip: redondo, max_price: 9000 }
+
+# ---------------------------------------------------------------------------
+# PRODUCTOS: Modo Cazador Automático en las 10 tiendas, de TODO tipo
+# ---------------------------------------------------------------------------
 queries:
-  - store: elektra
-    query: pantallas
-    max_results: 20
-  - store: elektra
-    query: laptops
-    max_results: 20
-  - store: elektra
-    query: celulares
-    max_results: 20
-  - store: chedraui
-    query: pantallas
-    max_results: 20
-  - store: chedraui
-    query: consolas
-    max_results: 20
-  - store: chedraui
-    query: refrigeradores
-    max_results: 20
-  - store: suburbia
-    query: pantallas
-    max_results: 20
-  - store: suburbia
-    query: celulares
-    max_results: 20
-  - store: coppel
-    query: pantallas
-    max_results: 20
-  - store: coppel
-    query: consolas
-    max_results: 20
-  - store: coppel
-    query: celulares
-    max_results: 20
-  - store: bodegas_alianza
-    query: whisky
-    max_results: 20
-  - store: bodegas_alianza
-    query: tequila
-    max_results: 20
-  - store: office_depot
-    query: laptops
-    max_results: 20
-  - store: office_depot
-    query: monitores
-    max_results: 20
-  - store: la_comer
-    query: pantallas
-    max_results: 20
-  - store: walmart
-    query: pantallas
-    max_results: 20
-  - store: walmart
-    query: laptops
-    max_results: 20
-  - store: amazon
-    query: pantallas 4k
-    max_results: 15
-  - store: mercadolibre
-    query: pantallas smart tv
-    max_results: 20
-  - store: mercadolibre
-    query: laptops gamer
-    max_results: 20
+  # --- Despensa / súper ---
+  - { store: walmart, query: leche, max_results: 15 }
+  - { store: walmart, query: cafe, max_results: 15 }
+  - { store: walmart, query: aceite, max_results: 15 }
+  - { store: walmart, query: papel higienico, max_results: 15 }
+  - { store: walmart, query: detergente, max_results: 15 }
+  - { store: walmart, query: pañales, max_results: 15 }
+  - { store: chedraui, query: leche, max_results: 15 }
+  - { store: chedraui, query: cafe, max_results: 15 }
+  - { store: chedraui, query: atun, max_results: 15 }
+  - { store: chedraui, query: detergente, max_results: 15 }
+  - { store: chedraui, query: pañales, max_results: 15 }
+  - { store: chedraui, query: formula infantil, max_results: 15 }
+  - { store: la_comer, query: leche, max_results: 15 }
+  - { store: la_comer, query: cafe, max_results: 15 }
+  - { store: la_comer, query: queso, max_results: 15 }
+  - { store: amazon, query: cafe en grano, max_results: 15 }
+  - { store: amazon, query: pañales, max_results: 15 }
+
+  # --- Belleza y cuidado personal ---
+  - { store: walmart, query: crema facial, max_results: 15 }
+  - { store: walmart, query: shampoo, max_results: 15 }
+  - { store: walmart, query: protector solar, max_results: 15 }
+  - { store: chedraui, query: crema facial, max_results: 15 }
+  - { store: la_comer, query: crema facial, max_results: 15 }
+  - { store: amazon, query: crema facial, max_results: 15 }
+  - { store: amazon, query: perfume, max_results: 15 }
+  - { store: amazon, query: protector solar, max_results: 15 }
+  - { store: suburbia, query: perfumes, max_results: 20 }
+  - { store: suburbia, query: maquillaje, max_results: 20 }
+  - { store: coppel, query: perfumes, max_results: 20 }
+  - { store: mercadolibre, query: perfume original, max_results: 20 }
+  - { store: mercadolibre, query: crema facial, max_results: 20 }
+
+  # --- Ropa, calzado y juguetes ---
+  - { store: suburbia, query: tenis, max_results: 20 }
+  - { store: suburbia, query: chamarras, max_results: 20 }
+  - { store: suburbia, query: juguetes, max_results: 20 }
+  - { store: coppel, query: tenis, max_results: 20 }
+  - { store: walmart, query: juguetes, max_results: 15 }
+  - { store: amazon, query: lego, max_results: 15 }
+
+  # --- Hogar, línea blanca y mascotas ---
+  - { store: walmart, query: colchon, max_results: 15 }
+  - { store: walmart, query: croquetas, max_results: 15 }
+  - { store: amazon, query: croquetas, max_results: 15 }
+  - { store: amazon, query: aspiradora, max_results: 15 }
+  - { store: coppel, query: colchones, max_results: 20 }
+  - { store: coppel, query: refrigeradores, max_results: 20 }
+  - { store: coppel, query: lavadoras, max_results: 20 }
+  - { store: elektra, query: lavadoras, max_results: 20 }
+  - { store: elektra, query: colchones, max_results: 20 }
+  - { store: elektra, query: motocicletas, max_results: 20 }
+  - { store: chedraui, query: refrigeradores, max_results: 20 }
+  - { store: suburbia, query: blancos, max_results: 20 }
+
+  # --- Vinos y licores ---
+  - { store: bodegas_alianza, query: whisky, max_results: 20 }
+  - { store: bodegas_alianza, query: tequila, max_results: 20 }
+  - { store: bodegas_alianza, query: vino tinto, max_results: 20 }
+  - { store: la_comer, query: vino, max_results: 15 }
+  - { store: walmart, query: whisky, max_results: 15 }
+
+  # --- Papelería / oficina ---
+  - { store: office_depot, query: papel bond, max_results: 20 }
+  - { store: office_depot, query: tinta impresora, max_results: 20 }
+  - { store: office_depot, query: silla oficina, max_results: 20 }
+
+  # --- Tecnología ---
+  - { store: elektra, query: pantallas, max_results: 20 }
+  - { store: elektra, query: laptops, max_results: 20 }
+  - { store: elektra, query: celulares, max_results: 20 }
+  - { store: chedraui, query: pantallas, max_results: 20 }
+  - { store: chedraui, query: consolas, max_results: 20 }
+  - { store: suburbia, query: celulares, max_results: 20 }
+  - { store: coppel, query: pantallas, max_results: 20 }
+  - { store: coppel, query: consolas, max_results: 20 }
+  - { store: coppel, query: celulares, max_results: 20 }
+  - { store: office_depot, query: laptops, max_results: 20 }
+  - { store: office_depot, query: monitores, max_results: 20 }
+  - { store: la_comer, query: pantallas, max_results: 20 }
+  - { store: walmart, query: pantallas, max_results: 20 }
+  - { store: walmart, query: laptops, max_results: 20 }
+  - { store: amazon, query: pantallas 4k, max_results: 15 }
+  - { store: mercadolibre, query: pantallas smart tv, max_results: 20 }
+  - { store: mercadolibre, query: laptops gamer, max_results: 20 }
 
 # Opcional: URLs directas de productos específicos adicionales que quieras vigilar fijo
 targets: []

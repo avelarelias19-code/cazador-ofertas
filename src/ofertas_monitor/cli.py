@@ -11,8 +11,9 @@ from typing import Sequence
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-from ofertas_monitor.config import Settings, current_interval_minutes, load_settings
+from ofertas_monitor.config import Settings, current_interval_minutes, load_settings, select_query_batch
 from ofertas_monitor.discovery import StoreDiscoverer
+from ofertas_monitor.flights import FlightMonitor
 from ofertas_monitor.models import Store
 from ofertas_monitor.monitor import Monitor
 from ofertas_monitor.notifier.telegram import TelegramNotifier
@@ -52,7 +53,7 @@ def build_default_scrapers(settings: Settings) -> dict[Store, StoreScraper]:
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="ofertas-monitor",
-        description="Monitorea ofertas extremas (>65%) y errores de precio en tiendas oficiales de México.",
+        description="Monitorea ofertas extremas, errores de precio y vuelos baratos en México.",
     )
     parser.add_argument(
         "-c",
@@ -71,7 +72,40 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="No envía mensajes a Telegram; solo registra en consola y SQLite.",
     )
+    parser.add_argument(
+        "--solo-vuelos",
+        action="store_true",
+        help="Solo corre el cazador de vuelos (forzado, sin esperar su intervalo).",
+    )
     return parser.parse_args(argv)
+
+
+async def _run_flights(
+    settings: Settings,
+    repo: Repository,
+    notifier: TelegramNotifier | None,
+    *,
+    context=None,
+    force: bool,
+) -> None:
+    fs = settings.flights
+    if not fs.enabled:
+        return
+    if not fs.active:
+        logging.info("Vuelos desactivados: configura flights.portals o TRAVELPAYOUTS_TOKEN.")
+        return
+    try:
+        report = await FlightMonitor(settings=fs, repository=repo, notifier=notifier).run_once(
+            context=context, force=force
+        )
+    except Exception as exc:  # los vuelos nunca deben tumbar el monitor de productos
+        logging.error("Error en el cazador de vuelos: %s", exc)
+        return
+    if not report.skipped:
+        logging.info(
+            "Vuelos: %d tarifas revisadas, %d ofertas, %d notificadas, %d errores.",
+            len(report.offers), len(report.deals), len(report.notified), len(report.errors),
+        )
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -100,6 +134,7 @@ async def _run(args: argparse.Namespace) -> int:
             rules=settings.rules,
             min_delay_seconds=settings.min_delay_seconds,
             block_backoff=timedelta(minutes=settings.block_backoff_minutes),
+            block_notice_cooldown=timedelta(hours=settings.block_notice_cooldown_hours),
         )
 
         async with async_playwright() as pw:
@@ -113,17 +148,42 @@ async def _run(args: argparse.Namespace) -> int:
             if browser is None:
                 browser = await pw.chromium.launch(headless=settings.headless)
             try:
-                while True:
+                if args.solo_vuelos:
                     context = await browser.new_context(
                         locale="es-MX",
                         timezone_id="America/Mexico_City",
                     )
                     try:
+                        await _run_flights(settings, repo, notifier, context=context, force=True)
+                    finally:
+                        await context.close()
+                    return 0
+
+                while True:
+                    # 1) Productos: lote rotativo de búsquedas para que cada corrida sea corta
+                    batch_idx = int(repo.get_meta("query_batch") or 0)
+                    batch, next_idx = select_query_batch(
+                        settings.queries, settings.queries_per_run, batch_idx
+                    )
+                    repo.set_meta("query_batch", str(next_idx))
+                    blocked = {s for s in Store if monitor.is_store_blocked(s)}
+                    batch = [q for q in batch if q.store not in blocked]
+
+                    context = await browser.new_context(
+                        locale="es-MX",
+                        timezone_id="America/Mexico_City",
+                    )
+                    try:
+                        # 2) Vuelos (portales web como Viajes Suburbia, Despegar, Volaris, etc. + API opcional)
+                        await _run_flights(settings, repo, notifier, context=context, force=False)
+
                         discoverer = StoreDiscoverer(rules=settings.rules)
-                        discovered = await discoverer.discover(context, settings.queries)
+                        discovered = await discoverer.discover(context, batch)
                         all_targets = list(settings.targets) + discovered
                         logging.info(
-                            "Iniciando corrida con %d productos fijos + %d descubiertos automáticamente.",
+                            "Iniciando corrida: %d búsquedas (lote %d), %d productos fijos + %d descubiertos.",
+                            len(batch),
+                            batch_idx,
                             len(settings.targets),
                             len(discovered),
                         )

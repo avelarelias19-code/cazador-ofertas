@@ -44,6 +44,7 @@ class Monitor:
         rules: DealRules = DealRules(),
         min_delay_seconds: float = 4.0,
         block_backoff: timedelta = timedelta(minutes=60),
+        block_notice_cooldown: timedelta = timedelta(hours=24),
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -54,15 +55,48 @@ class Monitor:
         self.rules = rules
         self.min_delay_seconds = min_delay_seconds
         self.block_backoff = block_backoff
+        self.block_notice_cooldown = block_notice_cooldown
         self._clock = clock
         self._sleep = sleep
         self._blocked_until: dict[Store, datetime] = {}
         self._seen_in_cycle: set[Store] = set()
 
     def is_store_blocked(self, store: Store, *, now: datetime | None = None) -> bool:
+        """Revisa el bloqueo en memoria y el persistido en SQLite (sobrevive entre corridas de GitHub Actions)."""
         ref = now or self._clock()
         until = self._blocked_until.get(store)
+        if until is None:
+            until = self.repository.get_meta_datetime(f"blocked_until:{store.value}")
+            if until is not None:
+                self._blocked_until[store] = until
         return until is not None and ref < until
+
+    async def _register_block(self, store: Store, exc: Exception, now: datetime) -> None:
+        until = now + self.block_backoff
+        self._blocked_until[store] = until
+        self.repository.set_meta_datetime(f"blocked_until:{store.value}", until)
+
+        msg = (
+            f"⚠️ {store.label} presentó CAPTCHA o bloqueo ({exc}). "
+            f"Tienda en pausa por {int(self.block_backoff.total_seconds() // 60)} min "
+            f"(sin intento de evasión)."
+        )
+        logger.warning(msg)
+
+        notice_key = f"block_notice:{store.value}"
+        last_notice = self.repository.get_meta_datetime(notice_key)
+        if last_notice is not None and now - last_notice < self.block_notice_cooldown:
+            return  # ya se avisó hace poco: no saturar el Telegram
+        self.repository.set_meta_datetime(notice_key, now)
+        await self._safe_send_text(msg)
+
+    async def _safe_send_text(self, text: str) -> None:
+        if self.notifier is None:
+            return
+        try:
+            await self.notifier.send_text(text)
+        except Exception as exc:  # un fallo de Telegram no debe tumbar la corrida
+            logger.error("No se pudo enviar aviso a Telegram: %s", exc)
 
     async def run_once(
         self,
@@ -94,16 +128,8 @@ class Monitor:
             try:
                 snapshot = await scraper.fetch(context, target.url, self.postal_codes)
             except BlockedError as exc:
-                self._blocked_until[store] = now + self.block_backoff
                 report.blocked_stores.add(store)
-                msg = (
-                    f"⚠️ {store.label} presentó CAPTCHA o bloqueo ({exc}). "
-                    f"Tienda en pausa por {int(self.block_backoff.total_seconds() // 60)} min "
-                    f"(sin intento de evasión)."
-                )
-                logger.warning(msg)
-                if self.notifier is not None:
-                    await self.notifier.send_text(msg)
+                await self._register_block(store, exc, now)
                 continue
             except Exception as exc:
                 logger.error("Error extrayendo %s: %s", target.url, exc)
@@ -126,7 +152,12 @@ class Monitor:
                 report.deals.append(deal)
                 if self.repository.should_notify(deal, now=now):
                     if self.notifier is not None:
-                        await self.notifier.send_deal(deal)
+                        try:
+                            await self.notifier.send_deal(deal)
+                        except Exception as exc:
+                            logger.error("No se pudo enviar la oferta a Telegram: %s", exc)
+                            report.errors[snapshot.url] = f"Telegram: {exc}"
+                            continue  # no se marca como notificada: se reintenta en la próxima corrida
                     self.repository.mark_notified(deal, now=now)
                     report.notified.append(deal)
 

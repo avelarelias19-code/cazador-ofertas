@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from ofertas_monitor.detection import Deal
+from ofertas_monitor.flights import FlightDeal, airline_label, city_label
 
 
 class TelegramError(RuntimeError):
@@ -80,6 +81,56 @@ class TelegramNotifier:
 
     async def send_deal(self, deal: Deal) -> None:
         await self._post(self.build_payload(deal))
+
+    def build_flight_payload(self, deal: FlightDeal) -> dict[str, Any]:
+        o = deal.offer
+        header = (
+            "🚨 <b>POSIBLE ERROR DE TARIFA</b> ✈️"
+            if deal.is_error_fare
+            else "✈️ <b>VUELO BARATO DETECTADO</b> 🔥"
+        )
+        tipo = "Redondo" if o.is_roundtrip else "Sencillo"
+        escalas = "Directo" if o.transfers == 0 else f"{o.transfers} escala(s)"
+        lines = [
+            header,
+            f"🛫 <b>Ruta:</b> {html.escape(city_label(o.origin))} → {html.escape(city_label(o.destination))}",
+            f"🔁 <b>Tipo:</b> {tipo} · {escalas}",
+            f"📅 <b>Salida:</b> {html.escape(o.departure_date)}"
+            + (f"  ·  <b>Regreso:</b> {html.escape(o.return_date)}" if o.return_date else ""),
+            f"💰 <b>Precio:</b> ${o.price:,.0f} {html.escape(o.currency)}",
+        ]
+        if o.source_portal:
+            lines.insert(1, f"🏪 <b>Portal:</b> {html.escape(o.source_portal)}")
+        if deal.reference_price is not None:
+            drop = deal.drop_pct
+            drop_txt = f" (-{drop:.0f}%)" if drop is not None and drop > 0 else ""
+            lines.append(
+                f"📊 <b>Precio normal:</b> ${deal.reference_price:,.0f}{drop_txt} "
+                f"<i>({html.escape(deal.reference_source or '')})</i>"
+            )
+        if o.airline:
+            vuelo = f" {html.escape(o.flight_number)}" if o.flight_number else ""
+            lines.append(f"🛩️ <b>Aerolínea:</b> {html.escape(airline_label(o.airline))}{vuelo}")
+        if deal.reasons:
+            lines.append("ℹ️ <b>Motivo:</b> " + "; ".join(html.escape(r) for r in deal.reasons))
+        lines.append("⚠️ <i>Precio tomado de búsquedas recientes: confírmalo antes de pagar.</i>")
+
+        portal_btn = f"🛒 Ver vuelo ({o.source_portal})" if o.source_portal else "🛒 Ver vuelo (Aviasales)"
+        return {
+            "chat_id": self._chat_id,
+            "text": "\n".join(lines),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": portal_btn, "url": o.aviasales_url}],
+                    [{"text": "🔎 Comparar en Google Flights", "url": o.google_flights_url}],
+                ]
+            },
+        }
+
+    async def send_flight_deal(self, deal: FlightDeal) -> None:
+        await self._post(self.build_flight_payload(deal))
 
     async def send_text(self, text: str) -> None:
         payload = {

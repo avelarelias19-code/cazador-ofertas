@@ -1,4 +1,8 @@
-"""Motor de evaluación de ofertas extremas (>65%), gama alta (>= $10,000 al 30%) y errores de precio."""
+"""Motor de evaluación de ofertas: descuento mínimo general, gama alta (>= $10,000) y errores de precio.
+
+Los umbrales reales se leen de `config.yaml` (sección `rules`); los valores por defecto de
+`DealRules` solo aplican si no hay configuración.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
